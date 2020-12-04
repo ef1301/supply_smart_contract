@@ -9,7 +9,7 @@
 
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.7.0 <0.8.0;
+pragma solidity >=0.4.22 <0.6.0;
 
 /**
  * @title Owned
@@ -48,133 +48,151 @@ contract Mortal is Owned {
  * @dev Implements payment contract system between a supplier and manufacturer
  */
 contract SupplyContract is Mortal {
-    enum Progress { Null, InStock, Deposited, InTransit, Delivered }
+    enum Progress { Null, Deposited, InTransit, Delivered, Received }
 
     struct Product {
-        uint256 prod_id;
+        uint batch_id;
         string prod_name;
         uint quantity;
         uint256 cost;
+        uint manufacture_date;
+    }
+
+    struct Track_Product {
+        uint batch_id;
+        address product_owner;
+        uint balance;
+        uint purchase_time;
         Progress status;
     }
 
-    struct Supplier {
-        uint256 id; // unique identifier for tenant
-        address payable account; // supplier's billing address
-        Product[] catalog;
-    }
+    mapping(uint => Product) public batch_history;
+    mapping(uint => Track_Product) public orders;
+    mapping(address => Track_Product) public balance;
 
-    Product[] inventory; // list of products in inventory, is dynamic array
-    uint minQuantity;
-    uint inventoryCount;
+    uint order_tracking_num;
+    uint current_batch_id;
+    Product inventory; // list of products in inventory, is dynamic array
 
     constructor(
-        uint _minQuantity
-    ) {
-        minQuantity = _minQuantity;
+        string memory _prod_name,
+        uint _quantity,
+        uint256 _cost
+        ) public {
+        order_tracking_num = 1;
+        current_batch_id = 0;
+        Product memory first_inventory = Product(current_batch_id, _prod_name, _quantity, _cost, block.timestamp);
+        inventory = first_inventory;
+        batch_history[current_batch_id] = inventory;
     }
 
     //EVENTS
-    event productPayment(
-        address indexed _from,
-        bytes32 indexed _id,
-        uint256 _value
+    event GetInventoryInfo (
+        uint _pro_id,
+        string _prod_name,
+        uint _quantity,
+        uint256 _cost,
+        uint manufacture_date
     );
 
-    event GetProductInfo(
-        uint256 productID,
-        string prodName,
-        uint numInStock,
-        uint256 price,
-        Progress progress
+    event GetOrderInfo (
+        uint _order_id,
+        uint _batch_id,
+        uint _quantity,
+        Progress _status
     );
+
+    event Purchase (
+        uint _order_id,
+        address _buyer,
+        uint _quantity,
+        uint _time_stamp
+    );
+
+    event InTransit (
+        uint _order_id,
+        address _buyer,
+        uint _time_stamp
+    );
+
+    event Delivered (
+        uint _order_id,
+        address _buyer,
+        uint _time_stamp
+    );
+
+    event Received (
+        uint _order_id,
+        address _buyer,
+        uint _time_stamp
+    );
+
+   /* fallback() external { //fallback function //payable?
+        getInventoryInfo();
+    }
+
+    receive() external payable {
+
+    }*/
+
+    function buyProduct(uint _quantity) payable public {
+        require(inventory.quantity > 0, "None left in stock.");
+        require(inventory.quantity >= _quantity, "Not enough in stock.");
+        require(inventory.cost * 1 ether == msg.value, "Not enough payment.");
+
+        owner.transfer(msg.value);
+        Track_Product memory new_order = Track_Product(inventory.batch_id, msg.sender, _quantity, block.timestamp, Progress.Deposited);
+        orders[order_tracking_num] = new_order;
+        emit Purchase(order_tracking_num, msg.sender, _quantity, block.timestamp);
+        order_tracking_num ++;
+        inventory.quantity -= _quantity;
+
+    }
+
+    function orderInTransit(uint _order_id) public onlyOwner {
+        require(orders[_order_id].status == Progress.Deposited, "Payment not Deposited.");
+        orders[_order_id].status = Progress.InTransit;
+        emit Delivered(_order_id, orders[_order_id].product_owner, block.timestamp);
+    }
+
+    function orderDelivered(uint _order_id) public onlyOwner {
+        require(orders[_order_id].status == Progress.InTransit, "Not InTransit.");
+        orders[_order_id].status = Progress.Delivered;
+        emit Delivered(_order_id, orders[_order_id].product_owner, block.timestamp);
+    }
+
+    function orderReceived(uint _order_id) public {
+        require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
+        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
+        orders[_order_id].status = Progress.Received;
+        balance[msg.sender].balance += orders[_order_id].balance;
+        emit Received(_order_id, orders[_order_id].product_owner, block.timestamp);
+    }
 
     /**
     * @dev Emits event to show requested product info
-    * @param prodId id of product being requested
     */
-    function getProduct(uint256 prodId) public {
-        for (uint i = 0; i < inventory.length; i++){
-            if (inventory[i].prod_id == prodId){
-                emit GetProductInfo(inventory[i].prod_id, inventory[i].prod_name, inventory[i].quantity, inventory[i].cost, inventory[i].status);
-                break;
-            }
-        }
+    function getInventoryInfo() public {
+        emit GetInventoryInfo(inventory.batch_id, inventory.prod_name, inventory.quantity, inventory.cost, inventory.manufacture_date);
     }
 
-    /**
-    * @dev Payment is made from owner of contract to supplier for specific product
-    * @param prodId id of product being requested
-    * @param _quantity new product shipment
+        /**
+    * @dev Emits event to show requested product info
     */
-    function productRequests(uint256 prodId, uint _quantity) public onlyOwner {
-        /** Find correct tenant by ID */
-        for (uint i = 0; i < inventory.length; i++){
-            if (inventory[i].prod_id == prodId){
-                //ERROR
-                //emit productPayment(owner, prodId, inventory[i].cost * _quantity);
-
-                inventory[i].quantity += _quantity;
-
-                break;
-            }
-        }
+    function getOrderInfo(uint _order_id) public {
+        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
+        emit GetOrderInfo(_order_id, orders[_order_id].batch_id, orders[_order_id].balance, orders[_order_id].status);
     }
-
 
     /**
     * @dev Owner sets the quantity for a specific product
-    * @param prodId id of product being requested
     * @param _quantity new product shipment
     */
-    function setInventory(uint256 prodId, uint _quantity) public onlyOwner {
-        /** Find correct tenant by ID */
-        for (uint i = 0; i < inventory.length; i++){
-            if (inventory[i].prod_id == prodId){
-                /** Refund security deposit */
-                inventory[i].quantity = _quantity;
-                break;
-            }
-        }
-    }
-
-    /**
-    * @dev Adds new product to inventory
-    * @param prodId new produt's id
-    * @param _quantity new product's quantity
-    * @param _cost new product's cost
-    */
-    function addNewProduct(uint256 prodId, string calldata _name, uint _quantity, uint256 _cost) public onlyOwner {
-        Progress progress = Progress.InStock;
-        Product memory p = Product(prodId, _name, _quantity, _cost, progress);
-        inventory.push(p);
-    }
-
-    /**
-    * @dev Removes product from inventory
-    * @param prodId id of product to be removed
-    */
-    function removeProduct(uint256 prodId) public onlyOwner {
-        /** Find correct tenant by ID */
-        for (uint i = 0; i < inventory.length; i++){
-            if (inventory[i].prod_id == prodId){
-
-                Product memory p = inventory[i];
-                inventory[i] = inventory[inventory.length-1];
-                inventory[inventory.length-1] = p;
-                delete inventory[inventory.length-1];
-                //inventory.length--;
-                break;
-            }
-        }
-    }
-
-    /**
-    * @dev Checks for the exist of a product in inventory iwth given id
-    * @param prodId product id
-    */
-    function productExists(uint256 prodId) public onlyOwner{
-
-        //return true;
+    function inventoryRestock(uint _quantity) public onlyOwner {
+        require(inventory.quantity == 0);
+        inventory.quantity += _quantity;
+        inventory.manufacture_date = block.timestamp;
+        inventory.batch_id ++;
+        batch_history[inventory.batch_id] = inventory;
     }
 }
