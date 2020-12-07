@@ -68,11 +68,11 @@ contract SupplyContract is Mortal {
 
     mapping(uint => Product) public batch_history;
     mapping(uint => Track_Product) public orders;
-    mapping(address => Track_Product) public balance;
+    mapping(address => uint) public balance;
 
     uint order_tracking_num;
     uint current_batch_id;
-    Product inventory; // list of products in inventory, is dynamic array
+    Product public inventory; // list of products in inventory, is dynamic array
 
     constructor(
         string memory _prod_name,
@@ -83,7 +83,7 @@ contract SupplyContract is Mortal {
         current_batch_id = 0;
         Product memory first_inventory = Product(current_batch_id, _prod_name, _quantity, _cost, block.timestamp);
         inventory = first_inventory;
-        batch_history[current_batch_id] = inventory;
+        batch_history[current_batch_id++] = inventory;
     }
 
     //EVENTS
@@ -127,12 +127,12 @@ contract SupplyContract is Mortal {
         uint _time_stamp
     );
 
-   /* fallback() external { //fallback function //payable?
-        getInventoryInfo();
+   function fallback() external { //fallback function //payable?
+        emit GetInventoryInfo(inventory.batch_id, inventory.prod_name, inventory.quantity, inventory.cost, inventory.manufacture_date);
     }
 
-    receive() external payable {
-
+    /*receive() external payable {
+        owner.transfer(msg.value);
     }*/
 
     function buyProduct(uint _quantity) payable public {
@@ -165,7 +165,7 @@ contract SupplyContract is Mortal {
         require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
         orders[_order_id].status = Progress.Received;
-        balance[msg.sender].balance += orders[_order_id].balance;
+        balance[msg.sender] += orders[_order_id].balance;
         emit Received(_order_id, orders[_order_id].product_owner, block.timestamp);
     }
 
@@ -180,6 +180,7 @@ contract SupplyContract is Mortal {
     * @dev Emits event to show requested product info
     */
     function getOrderInfo(uint _order_id) public {
+        require(_order_id <= order_tracking_num, "Order does not exist.");
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
         emit GetOrderInfo(_order_id, orders[_order_id].batch_id, orders[_order_id].balance, orders[_order_id].status);
     }

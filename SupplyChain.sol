@@ -4,7 +4,7 @@
  * - Emily F: emily.fang11@myhunter.cuny.edu
  *
  * Repository link:
- * - https://github.com/ef1301/
+ * - https://github.com/ef1301/supply_smart_contract
  */
 
 // SPDX-License-Identifier: GPL-3.0
@@ -20,7 +20,7 @@ contract Owned {
   address payable public owner;
 
   // Contract constructor: set owner
-  constructor() {
+  constructor() public {
     owner = msg.sender;
   }
   // Access control modifier
@@ -45,10 +45,16 @@ contract Mortal is Owned {
 
 /**
  * @title SupplyContract
- * @dev Implements payment contract system between a supplier and manufacturer
+ * @dev Implements payment contract system between a manufacturer and retailers that want to buy their product
  */
 contract SupplyContract is Mortal {
-    enum Progress { Null, Deposited, InTransit, Delivered, Received }
+    enum Progress {
+         Null,
+         Deposited,
+         InTransit,
+         Delivered,
+         Received
+    }
 
     struct Product {
         uint batch_id;
@@ -58,7 +64,7 @@ contract SupplyContract is Mortal {
         uint manufacture_date;
     }
 
-    struct Track_Product {
+    struct TrackProduct {
         uint batch_id;
         address product_owner;
         uint balance;
@@ -66,24 +72,20 @@ contract SupplyContract is Mortal {
         Progress status;
     }
 
-    mapping(uint => Product) public batch_history;
-    mapping(uint => Track_Product) public orders;
-    mapping(address => Track_Product) public balance;
+    mapping(uint => Product) public batchHistory;
+    mapping(uint => TrackProduct) public orders;
+    mapping(address => uint) public balance;
 
     uint order_tracking_num;
     uint current_batch_id;
-    Product inventory; // list of products in inventory, is dynamic array
+    Product public inventory; // Current Product/Product Batch in inventory
 
-    constructor(
-        string memory _prod_name,
-        uint _quantity,
-        uint256 _cost
-        ) public {
+    constructor(string memory _prod_name, uint _quantity, uint256 _cost) public {
         order_tracking_num = 1;
         current_batch_id = 0;
         Product memory first_inventory = Product(current_batch_id, _prod_name, _quantity, _cost, block.timestamp);
         inventory = first_inventory;
-        batch_history[current_batch_id] = inventory;
+        batch_history[current_batch_id++] = inventory;
     }
 
     //EVENTS
@@ -127,46 +129,37 @@ contract SupplyContract is Mortal {
         uint _time_stamp
     );
 
-   /* fallback() external { //fallback function //payable?
-        getInventoryInfo();
+   function fallback() external { //fallback function //payable?
+        emit GetInventoryInfo(
+             inventory.batch_id,
+             inventory.prod_name,
+             inventory.quantity,
+             inventory.cost,
+             inventory.manufacture_date
+        );
     }
 
-    receive() external payable {
-
+    /*receive() external payable {
+        owner.transfer(msg.value);
     }*/
 
     function buyProduct(uint _quantity) payable public {
         require(inventory.quantity > 0, "None left in stock.");
         require(inventory.quantity >= _quantity, "Not enough in stock.");
-        require(inventory.cost * 1 ether == msg.value, "Not enough payment.");
+        require(inventory.cost * 1 wei == msg.value, "Not enough payment.");
 
         owner.transfer(msg.value);
         Track_Product memory new_order = Track_Product(inventory.batch_id, msg.sender, _quantity, block.timestamp, Progress.Deposited);
         orders[order_tracking_num] = new_order;
-        emit Purchase(order_tracking_num, msg.sender, _quantity, block.timestamp);
+        emit Purchase(
+             order_tracking_num,
+             msg.sender,
+             _quantity,
+             block.timestamp
+        );
         order_tracking_num ++;
         inventory.quantity -= _quantity;
 
-    }
-
-    function orderInTransit(uint _order_id) public onlyOwner {
-        require(orders[_order_id].status == Progress.Deposited, "Payment not Deposited.");
-        orders[_order_id].status = Progress.InTransit;
-        emit Delivered(_order_id, orders[_order_id].product_owner, block.timestamp);
-    }
-
-    function orderDelivered(uint _order_id) public onlyOwner {
-        require(orders[_order_id].status == Progress.InTransit, "Not InTransit.");
-        orders[_order_id].status = Progress.Delivered;
-        emit Delivered(_order_id, orders[_order_id].product_owner, block.timestamp);
-    }
-
-    function orderReceived(uint _order_id) public {
-        require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
-        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
-        orders[_order_id].status = Progress.Received;
-        balance[msg.sender].balance += orders[_order_id].balance;
-        emit Received(_order_id, orders[_order_id].product_owner, block.timestamp);
     }
 
     /**
@@ -180,8 +173,47 @@ contract SupplyContract is Mortal {
     * @dev Emits event to show requested product info
     */
     function getOrderInfo(uint _order_id) public {
+        require(_order_id <= order_tracking_num, "Order does not exist.");
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
-        emit GetOrderInfo(_order_id, orders[_order_id].batch_id, orders[_order_id].balance, orders[_order_id].status);
+        emit GetOrderInfo(
+             _order_id, orders[_order_id].batch_id,
+             orders[_order_id].balance,
+             orders[_order_id].status
+        );
+    }
+
+
+    function orderInTransit(uint _order_id) public onlyOwner {
+        require(orders[_order_id].status == Progress.Deposited, "Payment not Deposited.");
+        orders[_order_id].status = Progress.InTransit;
+        emit Delivered(
+             _order_id,
+             orders[_order_id].product_owner,
+             block.timestamp
+        );
+    }
+
+    function orderReceived(uint _order_id) public {
+        require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
+        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
+        orders[_order_id].status = Progress.Received;
+        balance[msg.sender] += orders[_order_id].balance;
+        emit Received(
+             _order_id,
+             orders[_order_id].product_owner,
+             block.timestamp
+        );
+    }
+
+
+    function orderDelivered(uint _order_id) public onlyOwner {
+        require(orders[_order_id].status == Progress.InTransit, "Not InTransit.");
+        orders[_order_id].status = Progress.Delivered;
+        emit Delivered(
+             _order_id,
+             orders[_order_id].product_owner,
+             block.timestamp
+        );
     }
 
     /**
@@ -193,6 +225,6 @@ contract SupplyContract is Mortal {
         inventory.quantity += _quantity;
         inventory.manufacture_date = block.timestamp;
         inventory.batch_id ++;
-        batch_history[inventory.batch_id] = inventory;
+        batchHistory[inventory.batch_id] = inventory;
     }
 }
