@@ -139,9 +139,7 @@ contract SupplyContract is Mortal {
         );
     }
 
-    /*receive() external payable {
-        owner.transfer(msg.value);
-    }*/
+    function() external payable {}
 
 
     /**
