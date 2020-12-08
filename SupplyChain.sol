@@ -247,6 +247,7 @@ contract SupplyContract is Mortal {
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
         orders[_order_id].status = Progress.Refund;
         owner.transfer(orders[_order_id].balance * inventory.cost * 1 finney);
+        inventory.quantity += orders[_order_id].balance;
         balance[msg.sender] -= orders[_order_id].balance;
         emit ProductRefund(
              _order_id,
