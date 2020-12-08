@@ -53,7 +53,8 @@ contract SupplyContract is Mortal {
          Deposited,
          InTransit,
          Delivered,
-         Received
+         Received,
+         Refund
     }
 
     struct Product {
@@ -129,6 +130,19 @@ contract SupplyContract is Mortal {
         uint _time_stamp
     );
 
+    event OrderRefund (
+        uint _order_id,
+        address _buyer,
+        uint _time_stamp
+    );
+
+    event ProductRefund (
+        uint _order_id,
+        address _buyer,
+        uint _time_stamp
+    );
+
+
    function fallback() external {
         emit GetInventoryInfo(
              inventory.batch_id,
@@ -193,7 +207,7 @@ contract SupplyContract is Mortal {
 
 
     /**
-    * @dev Owner sets the Received status when order is received by new owner and emits the Received event.
+    * @dev New product owner sets the Received status when order is received by new owner and emits the Received event.
     * @param _order_id the id of the order received, sender must be the new owner
     */
     function orderReceived(uint _order_id) public {
@@ -202,6 +216,39 @@ contract SupplyContract is Mortal {
         orders[_order_id].status = Progress.Received;
         balance[msg.sender] += orders[_order_id].balance;
         emit Received(
+             _order_id,
+             orders[_order_id].product_owner,
+             block.timestamp
+        );
+    }
+
+    /**
+    * @dev New Product Owner sets the Refund status when order is not received by new owner and emits the Refund event.
+    * @param _order_id the id of the order received, sender must be the new owner
+    */
+    function orderRefund(uint _order_id) public {
+        require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
+        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
+        orders[_order_id].status = Progress.Refund;
+        owner.transfer(orders[_order_id].balance * inventory.cost * 1 wei);
+        emit OrderRefund(
+             _order_id,
+             orders[_order_id].product_owner,
+             block.timestamp
+        );
+    }
+
+    /**
+    * @dev New Product Owner sets the Refund status when order is received by new owner and they want a refund of the product.
+    * @param _order_id the id of the order received, sender must be the new owner
+    */
+    function productRefund(uint _order_id) public {
+        require(orders[_order_id].status == Progress.Received, "Not Owned for Refund.");
+        require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
+        orders[_order_id].status = Progress.Refund;
+        owner.transfer(orders[_order_id].balance * inventory.cost * 1 wei);
+        balance[msg.sender] -= orders[_order_id].balance;
+        emit ProductRefund(
              _order_id,
              orders[_order_id].product_owner,
              block.timestamp
