@@ -163,7 +163,7 @@ contract SupplyContract is Mortal {
     function buyProduct(uint _quantity) payable public {
         require(inventory.quantity > 0, "None left in stock.");
         require(inventory.quantity >= _quantity, "Not enough in stock.");
-        require(inventory.cost * 1 wei == msg.value, "Not enough payment.");
+        require(inventory.cost * 1 finney == msg.value, "Not enough payment.");
 
         owner.transfer(msg.value);
         TrackProduct memory new_order = TrackProduct(inventory.batch_id, msg.sender, _quantity, block.timestamp, Progress.Deposited);
@@ -230,7 +230,7 @@ contract SupplyContract is Mortal {
         require(orders[_order_id].status == Progress.Delivered, "Not Delivered.");
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
         orders[_order_id].status = Progress.Refund;
-        owner.transfer(orders[_order_id].balance * inventory.cost * 1 wei);
+        owner.transfer(orders[_order_id].balance * inventory.cost * 1 finney);
         emit OrderRefund(
              _order_id,
              orders[_order_id].product_owner,
@@ -246,7 +246,7 @@ contract SupplyContract is Mortal {
         require(orders[_order_id].status == Progress.Received, "Not Owned for Refund.");
         require(msg.sender == orders[_order_id].product_owner, "Not the product owner.");
         orders[_order_id].status = Progress.Refund;
-        owner.transfer(orders[_order_id].balance * inventory.cost * 1 wei);
+        owner.transfer(orders[_order_id].balance * inventory.cost * 1 finney);
         balance[msg.sender] -= orders[_order_id].balance;
         emit ProductRefund(
              _order_id,
